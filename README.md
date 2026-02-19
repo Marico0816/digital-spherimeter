@@ -1,2 +1,2 @@
-# digital-spherometer
+# digital-spherimeter
 Group project 
