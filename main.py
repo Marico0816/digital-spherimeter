@@ -113,15 +113,18 @@ def test(source, country, true_areas):
 
     # Output results
     print("Calculated Area:", area)
-    true_area = true_areas[(source, country)]
-    print("True Area:", true_area)
-    print("Error:", str(round(100 * (area - true_area) / true_area, 2)) + "%")
+    if (source, country) in true_areas:
+        true_area = true_areas[(source, country)]
+        print("True Area:", true_area)
+        print("Error:", str(round(100 * (area - true_area) / true_area, 2)) + "%")
+    else:
+        print("No True Area Found")
     print()
 
 
 def main():
     # Dictionary of true areas
-    true_areas = {("octant", None): math.pi/2, ("country", "Lesotho"): 30355}
+    true_areas = {("octant", None): math.pi/2, ("country", "Lesotho"): 30355, ("country", "France"): 543941}
 
     # Test octant
     source = "octant"
@@ -131,6 +134,11 @@ def main():
     # Test Lesotho
     source = "country"
     country = "Lesotho"
+    test(source, country, true_areas)
+
+    # Test France
+    source = "country"
+    country = "France"
     test(source, country, true_areas)
 
 
