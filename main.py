@@ -91,7 +91,7 @@ def rescale(area, source):
     return area
 
 
-def test(source, country, true_areas):
+def test(source, country, true_area):
     """
     Single testing unit
     """
@@ -113,33 +113,29 @@ def test(source, country, true_areas):
 
     # Output results
     print("Calculated Area:", area)
-    if (source, country) in true_areas:
-        true_area = true_areas[(source, country)]
-        print("True Area:", true_area)
-        print("Error:", str(round(100 * (area - true_area) / true_area, 2)) + "%")
-    else:
-        print("No True Area Found")
+    print("True Area:", true_area)
+    print("Error:", str(round(100 * (area - true_area) / true_area, 2)) + "%")
     print()
 
 
 def main():
-    # Dictionary of true areas
-    true_areas = {("octant", None): math.pi/2, ("country", "Lesotho"): 30355, ("country", "France"): 543941}
-
     # Test octant
     source = "octant"
     country = None
-    test(source, country, true_areas)
+    true_area = math.pi/2
+    test(source, country, true_area)
 
     # Test Lesotho
     source = "country"
     country = "Lesotho"
-    test(source, country, true_areas)
+    true_area = 30355
+    test(source, country, true_area)
 
     # Test France
     source = "country"
     country = "France"
-    test(source, country, true_areas)
+    true_area = 543941
+    test(source, country, true_area)
 
 
 if __name__ == "__main__":
