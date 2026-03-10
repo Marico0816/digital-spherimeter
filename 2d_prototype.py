@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 
 from main import calculate_area
 
+
 class SphereDrawer2D:
     def __init__(self):
         # Initialize points
