@@ -5,6 +5,9 @@ from main import calculate_area
 
 
 class SphereDrawer2D:
+    """
+    User input points on a 3D unit hemisphere projected onto a 2D circle
+    """
     def __init__(self):
         # Initialize points
         self.points_2d = []
@@ -51,6 +54,9 @@ class SphereDrawer2D:
         self.fig.canvas.draw_idle()
 
     def convert_2D_to_3D(self, x, y):
+        """
+        Convert 2D circle point to 3D sphere point
+        """
         return (x, y, math.sqrt(1 - x * x - y * y))
 
     def calculate_area(self):
@@ -64,7 +70,7 @@ class SphereDrawer2D:
 
     def add_point(self, x, y):
         """
-        Add point if within domain
+        Add point if within circle
         """
         if x * x + y * y <= 1:
             self.points_2d.append((x, y))
