@@ -1,5 +1,6 @@
 import geopandas as gpd
 import math
+import numpy as np
 
 
 def geographic_to_cartesian(lat, lon):
@@ -61,17 +62,52 @@ def process_data(source_type, country=None):
         return points
 
 
-def process_three_points():
-    """
-    Processes a single set of three points
-    """
+def process_three_points(A ,B, C):
+    A = np.array(A)
+    B = np.array(B)
+    C = np.array(C)
+
+    # chord lengths
+    a = np.linalg.norm(B - A)
+    b = np.linalg.norm(C - B)
+    c = np.linalg.norm(C - A)
+
+    # triangle area
+    delta = 0.5 * np.linalg.norm(np.cross(B - A, C - A))
+
+    if a * b * c == 0:
+        return 0
+
+    # circumradius
+    rho = (a * b * c) / (4 * delta)
+
+    # space curvature
+    kappa = 1 / rho
+
+    # geodesic curvature on sphere
+    kg = math.sqrt(max(kappa**2 - 1, 0))
+
+    # arc length weight
+    ds = (a + b) / 2
+
+    return kg * ds
 
 
 def calculate_area(points):
-    """
-    Iterates over sets of three points along curve
-    """
-    return 1
+    N = len(points)
+    total = 0
+
+    for i in range(N):
+        A = points[i - 1]
+        B = points[i]
+        C = points[(i + 1) % N]
+
+        total += process_three_points(A, B, C)
+
+    # unit sphere area formula
+    area = 2 * math.pi - total
+
+    return area
 
 
 def rescale(area, source):
