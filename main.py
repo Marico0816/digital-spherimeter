@@ -2,6 +2,8 @@ import geopandas as gpd
 import math
 import numpy as np
 
+# from twod_prototype import SphereDrawer2D
+
 
 def geographic_to_cartesian(lat, lon):
     """
@@ -49,15 +51,24 @@ def process_data(source_type, country=None):
 
         # If the country has multiple parts, take the first one for now; later, we can loop over all parts
         if geom.geom_type == "MultiPolygon":
-            geom = list(geom.geoms)[0]
+            if country == "France":
+                geom = list(geom.geoms)[1]
+            else:
+                geom = list(geom.geoms)[0]
 
         # Get longitude, latitude coordinates
         coords = list(geom.exterior.coords)
+
+        # Remove last point if points are already circular
+        if coords[0] == coords[-1]:
+            coords = coords[:-1]
 
         # Convert to cartesion coordinates
         points = []
         for lon, lat in coords:
             points.append(geographic_to_cartesian(lat, lon))
+        
+        points = points[::-1]
 
         return points
 
@@ -66,6 +77,7 @@ def process_three_points(A ,B, C):
     A = np.array(A)
     B = np.array(B)
     C = np.array(C)
+    # print(A, B, C)
 
     u = B - A
     v = C - B
@@ -93,7 +105,7 @@ def process_three_points(A ,B, C):
 
 
 def calculate_area(points):
-     N = len(points)
+    N = len(points)
     total = 0
 
     for i in range(N):
@@ -144,6 +156,12 @@ def test(source, country, true_area):
 
     # Rescale
     area = rescale(area, source)
+
+    # Plot
+    # plot = SphereDrawer2D()
+    # points_2d = [(x, y) for x, y, z in points]
+    # plot.set_points(points_2d)
+    # plot.show()
 
     # Output results
     print("Calculated Area:", area)
