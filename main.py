@@ -67,34 +67,33 @@ def process_three_points(A ,B, C):
     B = np.array(B)
     C = np.array(C)
 
-    # chord lengths
-    a = np.linalg.norm(B - A)
-    b = np.linalg.norm(C - B)
-    c = np.linalg.norm(C - A)
+    u = B - A
+    v = C - B
+    r = B  # normal (unit sphere)
 
-    # triangle area
-    delta = 0.5 * np.linalg.norm(np.cross(B - A, C - A))
+    # projection to tangent plane
+    u_perp = u - np.dot(u, r) * r
+    v_perp = v - np.dot(v, r) * r
 
-    if a * b * c == 0:
+    norm_u = np.linalg.norm(u_perp)
+    norm_v = np.linalg.norm(v_perp)
+
+    if norm_u == 0 or norm_v == 0:
         return 0
 
-    # circumradius
-    rho = (a * b * c) / (4 * delta)
+    # angle magnitude
+    cos_theta = np.dot(u_perp, v_perp) / (norm_u * norm_v)
+    cos_theta = np.clip(cos_theta, -1, 1)
+    theta = math.acos(cos_theta)
 
-    # space curvature
-    kappa = 1 / rho
+    cross = np.cross(u_perp, v_perp)
+    sign = np.sign(np.dot(cross, r))  # orientation
 
-    # geodesic curvature on sphere
-    kg = math.sqrt(max(kappa**2 - 1, 0))
-
-    # arc length weight
-    ds = (a + b) / 2
-
-    return kg * ds
+    return sign * theta
 
 
 def calculate_area(points):
-    N = len(points)
+     N = len(points)
     total = 0
 
     for i in range(N):
@@ -104,7 +103,6 @@ def calculate_area(points):
 
         total += process_three_points(A, B, C)
 
-    # unit sphere area formula
     area = 2 * math.pi - total
 
     return area
