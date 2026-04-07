@@ -25,9 +25,68 @@ def normalize(v):
     return v / norm
 
 
+def geodesic_arc_points(p0, p1, n=100, radius=1.0):
+    """
+    Return n+1 points along the shorter geodesic (great-circle arc)
+    from p0 to p1 on the sphere using spherical linear interpolation.
+    """
+    p0 = normalize(p0)
+    p1 = normalize(p1)
+
+    dot = np.clip(np.dot(p0, p1), -1.0, 1.0)
+    omega = math.acos(dot)
+
+    # If points are extremely close, just return a straight interpolation
+    # projected back to the sphere.
+    if omega < 1e-10:
+        pts = []
+        for t in np.linspace(0, 1, n + 1):
+            p = normalize((1 - t) * p0 + t * p1) * radius
+            pts.append(p)
+        return np.array(pts)
+
+    sin_omega = math.sin(omega)
+    pts = []
+
+    for t in np.linspace(0, 1, n + 1):
+        a = math.sin((1 - t) * omega) / sin_omega
+        b = math.sin(t * omega) / sin_omega
+        p = a * p0 + b * p1
+        pts.append(p * radius)
+
+    return np.array(pts)
+
+
+def build_geodesic_polyline(points, close=False, arc_resolution=100):
+    """
+    Build a polyline made of geodesic arcs between consecutive points.
+    """
+    if len(points) < 2:
+        return None
+
+    all_pts = []
+
+    num_segments = len(points) if close else len(points) - 1
+
+    for i in range(num_segments):
+        p0 = points[i]
+        p1 = points[(i + 1) % len(points)]
+
+        arc = geodesic_arc_points(p0, p1, n=arc_resolution, radius=RADIUS)
+
+        # Avoid duplicating endpoints between consecutive arcs
+        if i > 0:
+            arc = arc[1:]
+
+        all_pts.append(arc)
+
+    all_pts = np.vstack(all_pts)
+    return pv.lines_from_points(all_pts, close=False)
+
+
 def update_polyline():
     """
-    Update the red boundary line connecting clicked points
+    Update the red boundary line connecting clicked points by geodesic arcs
     """
     global line_actor
 
@@ -36,13 +95,11 @@ def update_polyline():
         line_actor = None
 
     if len(clicked_points) >= 2:
-        pts = np.array(clicked_points)
-
-        if len(clicked_points) >= 3:
-            poly = pv.lines_from_points(pts, close=True)
-        else:
-            poly = pv.lines_from_points(pts, close=False)
-
+        poly = build_geodesic_polyline(
+            clicked_points,
+            close=(len(clicked_points) >= 3),
+            arc_resolution=100,
+        )
         line_actor = plotter.add_mesh(poly, color="red", line_width=4)
 
 
@@ -66,7 +123,7 @@ def update_text():
 
     message = (
         f"Points: {len(clicked_points)}\n"
-        f"Area (your method): {area:.6f}\n"
+        f"Area: {area:.6f}\n"
         f"Fraction of sphere: {fraction:.6%}\n"
         f"Controls:\n"
         f"  Left click: add point\n"
@@ -173,8 +230,7 @@ def main():
         callback=click_callback,
         left_clicking=True,
         show_point=False,
-        show_message=True,
-        picker="cell",
+        show_message=False,
     )
 
     # Keyboard shortcuts
