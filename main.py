@@ -3,6 +3,8 @@ import math
 import numpy as np
 
 # from twod_prototype import SphereDrawer2D
+from country_areas_ne_names import get_country_area_km2
+from country_areas_ne_names import COUNTRY_AREAS_KM2
 
 
 def geographic_to_cartesian(lat, lon):
@@ -31,7 +33,7 @@ def process_data(source_type, country=None):
 
     # Most basic test
     if source_type == "octant":
-        return [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+        return [[(1, 0, 0), (0, 1, 0), (0, 0, 1)]]
 
     # Country
     if source_type == "country":
@@ -41,7 +43,7 @@ def process_data(source_type, country=None):
             return []
 
         # Load data
-        gdf = gpd.read_file("ne_110m_admin_0_countries/ne_110m_admin_0_countries.shp")
+        gdf = gpd.read_file("ne_10m_admin_0_countries/ne_10m_admin_0_countries.shp")
 
         # Get specific country data
         if gdf[gdf["ADMIN"] == country].empty:
@@ -49,12 +51,26 @@ def process_data(source_type, country=None):
             return []
         geom = gdf[gdf["ADMIN"] == country].iloc[0].geometry            
 
-        # If the country has multiple parts, take the first one for now; later, we can loop over all parts
+        # If the country has multiple parts, sum them
         if geom.geom_type == "MultiPolygon":
-            if country == "France":
-                geom = list(geom.geoms)[1]
-            else:
-                geom = list(geom.geoms)[0]
+            points = []
+            # Loop over individual parts of country
+            for geom_part in list(geom.geoms):
+                # Get longitude, latitude coordinates
+                coords = list(geom_part.exterior.coords)
+
+                # Remove last point if points are already circular
+                if coords[0] == coords[-1]:
+                    coords = coords[:-1]
+
+                # Convert to cartesion coordinates
+                part = []
+                for lon, lat in coords:
+                    part.append(geographic_to_cartesian(lat, lon))
+                
+                points.append(part[::-1])
+
+            return points
 
         # Get longitude, latitude coordinates
         coords = list(geom.exterior.coords)
@@ -70,7 +86,7 @@ def process_data(source_type, country=None):
         
         points = points[::-1]
 
-        return points
+        return [points]
 
 
 def process_three_points(A ,B, C):
@@ -120,6 +136,13 @@ def calculate_area(points):
     return area
 
 
+def calculate_area_of_multiple_parts(parts):
+    total = 0
+    for points in parts:
+        total += calculate_area(points)
+    return total
+
+
 def rescale(area, source):
     """
     Rescale the calculated area from unit sphere area to actual area if needed
@@ -149,10 +172,10 @@ def test(source, country, true_area):
 
     # Get points from source
     points = process_data(source, country)
-    print("Points:", points)
+    # print("Points:", points)
 
     # Calculate area
-    area = calculate_area(points)
+    area = calculate_area_of_multiple_parts(points)
 
     # Rescale
     area = rescale(area, source)
@@ -170,24 +193,59 @@ def test(source, country, true_area):
     print()
 
 
+def test_country(country):
+    source = "country"
+    true_area = get_country_area_km2(country)
+    test(source, country, true_area)
+
+
 def main():
-    # Test octant
-    source = "octant"
-    country = None
-    true_area = math.pi/2
-    test(source, country, true_area)
+    # # Test octant
+    # source = "octant"
+    # country = None
+    # true_area = math.pi/2
+    # test(source, country, true_area)
 
-    # Test Lesotho
-    source = "country"
-    country = "Lesotho"
-    true_area = 30355
-    test(source, country, true_area)
+    # Test specific countries
+    test_country("France")
+    test_country("United States of America")
+    test_country("Japan")
+    test_country("China")
+    test_country("Russia")
+    test_country("Lesotho")
 
-    # Test France
-    source = "country"
-    country = "France"
-    true_area = 543941
-    test(source, country, true_area)
+
+    # Test all countries
+    gdf = gpd.read_file("ne_10m_admin_0_countries/ne_10m_admin_0_countries.shp")
+
+    shape_countries = set(gdf["ADMIN"])
+    wiki_countries = set(COUNTRY_AREAS_KM2.keys())
+    countries = sorted(shape_countries & wiki_countries)
+
+    abs_errors = []
+
+    for country in countries:
+        true_area = COUNTRY_AREAS_KM2[country]
+
+        points = process_data("country", country)
+        area = calculate_area_of_multiple_parts(points)
+        area = rescale(area, "country")
+
+        abs_error_pct = abs(100 * (area - true_area) / true_area)
+        abs_errors.append(abs_error_pct)
+
+        print(
+            f"{country}: "
+            f"calculated = {area:.2f}, "
+            f"true = {true_area:.2f}, "
+            f"absolute % error = {abs_error_pct:.2f}%"
+        )
+
+    avg_abs_error = sum(abs_errors) / len(abs_errors)
+
+    print()
+    print(f"Country county: {len(countries)}")
+    print(f"Average absolute percent error: {avg_abs_error:.4f}%")
 
 
 if __name__ == "__main__":
