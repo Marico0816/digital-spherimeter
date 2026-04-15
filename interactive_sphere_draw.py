@@ -11,6 +11,7 @@ clicked_points = []
 point_actors = []
 line_actor = None
 text_actor = None
+fill_actor = None
 plotter = None
 
 
@@ -126,7 +127,8 @@ def update_text():
         f"Area: {area:.6f}\n"
         f"Fraction of sphere: {fraction:.6%}\n"
         f"Controls:\n"
-        f"  Left click: add point\n"
+        f"  Left click: add point (counter-clockwise)\n"
+        f"  Left hold and drag: change perspective\n"
         f"  u: undo\n"
         f"  c: clear\n"
         f"  q: quit"
@@ -135,7 +137,7 @@ def update_text():
     text_actor = plotter.add_text(
         message,
         position="upper_left",
-        font_size=12,
+        font_size=30,
         color="black",
     )
 
@@ -154,6 +156,7 @@ def add_clicked_point(point):
     point_actors.append(actor)
 
     update_polyline()
+    update_fill()
     update_text()
 
     print(f"Added point {len(clicked_points)}: {tuple(p)}")
@@ -172,6 +175,7 @@ def undo_last():
     plotter.remove_actor(actor)
 
     update_polyline()
+    update_fill()
     update_text()
 
     print("Undo last point")
@@ -181,8 +185,10 @@ def clear_all():
     """
     Clear all points and lines
     """
-    global clicked_points, point_actors, line_actor
+    global clicked_points, point_actors, line_actor, fill_actor
 
+    for actor in point_actors:
+        plotter.remove_actor(actor)
     clicked_points = []
 
     for actor in point_actors:
@@ -194,6 +200,7 @@ def clear_all():
         line_actor = None
 
     update_text()
+    update_fill()
 
     print("Cleared all points")
 
@@ -206,6 +213,208 @@ def click_callback(point):
         return
 
     add_clicked_point(point)
+
+
+def spherical_polygon_orientation(points):
+    """
+    Estimate orientation of a spherical polygon.
+    Positive means roughly counterclockwise with respect to the polygon normal.
+    Returns a signed value; near 0 means ambiguous/degenerate.
+    """
+    if len(points) < 3:
+        return 0.0
+
+    pts = [normalize(p) for p in points]
+    total = np.zeros(3)
+
+    for i in range(len(pts)):
+        p0 = pts[i]
+        p1 = pts[(i + 1) % len(pts)]
+        total += np.cross(p0, p1)
+
+    centroid = normalize(np.sum(pts, axis=0))
+    return float(np.dot(total, centroid))
+
+
+def build_dense_boundary(points, arc_resolution=40):
+    """
+    Densify the spherical polygon boundary using geodesic arcs.
+    Returns a sequence of boundary points on the sphere.
+    """
+    if len(points) < 3:
+        return None
+
+    dense = []
+    n = len(points)
+    for i in range(n):
+        p0 = points[i]
+        p1 = points[(i + 1) % n]
+        arc = geodesic_arc_points(p0, p1, n=arc_resolution, radius=RADIUS)
+
+        if i > 0:
+            arc = arc[1:]  # avoid duplicate endpoint
+        dense.append(arc)
+
+    return np.vstack(dense)
+
+
+def signed_area_2d(poly):
+    """
+    Signed area of a 2D polygon.
+    """
+    x = poly[:, 0]
+    y = poly[:, 1]
+    return 0.5 * np.sum(x * np.roll(y, -1) - y * np.roll(x, -1))
+
+
+def polygon_reference_normal(points):
+    """
+    Robust reference normal from the ordered spherical polygon.
+    Positive orientation corresponds to the intended CCW interior.
+    """
+    if len(points) < 3:
+        return None
+
+    pts = [normalize(p) for p in points]
+    total = np.zeros(3)
+
+    for i in range(len(pts)):
+        p0 = pts[i]
+        p1 = pts[(i + 1) % len(pts)]
+        total += np.cross(p0, p1)
+
+    nrm = np.linalg.norm(total)
+    if nrm < 1e-10:
+        return None
+
+    return total / nrm
+
+
+def local_tangent_basis(center):
+    """
+    Build an orthonormal basis (e1, e2) for the tangent plane at `center`.
+    """
+    c = normalize(center)
+
+    ref = np.array([0.0, 0.0, 1.0])
+    if abs(np.dot(c, ref)) > 0.9:
+        ref = np.array([1.0, 0.0, 0.0])
+
+    e1 = normalize(np.cross(ref, c))
+    e2 = normalize(np.cross(c, e1))
+    return e1, e2
+
+
+def spherical_to_gnomonic(points, center):
+    """
+    Gnomonic projection from the sphere to the tangent plane at `center`.
+
+    This only behaves well when all points lie in the same hemisphere as center,
+    i.e. dot(center, p) > 0 for every boundary point.
+    """
+    c = normalize(center)
+    e1, e2 = local_tangent_basis(c)
+
+    coords_2d = []
+    for p in points:
+        p = normalize(p)
+        denom = np.dot(c, p)
+
+        # Outside visible hemisphere -> projection invalid
+        if denom <= 1e-8:
+            return None, None, None, None
+
+        x = np.dot(p, e1) / denom
+        y = np.dot(p, e2) / denom
+        coords_2d.append([x, y])
+
+    return np.array(coords_2d), e1, e2, c
+
+
+def gnomonic_to_sphere(x, y, e1, e2, c, radius=1.0):
+    """
+    Inverse gnomonic map from tangent-plane coordinates back to the sphere.
+    """
+    v = c + x * e1 + y * e2
+    return normalize(v) * radius
+
+
+def build_filled_spherical_region(points, arc_resolution=40):
+    """
+    Build a filled mesh for a spherical polygon by:
+      1. densifying the geodesic boundary,
+      2. projecting with a gnomonic projection centered at a robust polygon normal,
+      3. triangulating in 2D,
+      4. mapping triangles back to the sphere.
+
+    Returns None if the polygon is too ambiguous / too large for a single
+    hemisphere-based fill.
+    """
+    if len(points) < 3:
+        return None
+
+    boundary3d = build_dense_boundary(points, arc_resolution=arc_resolution)
+    if boundary3d is None or len(boundary3d) < 3:
+        return None
+
+    normal = polygon_reference_normal(points)
+    if normal is None:
+        return None
+
+    # Make sure the intended interior is on the side of 'normal'
+    boundary2d, e1, e2, c = spherical_to_gnomonic(boundary3d, normal)
+    if boundary2d is None:
+        return None
+
+    # Ensure CCW in projection
+    if signed_area_2d(boundary2d) < 0:
+        boundary2d = boundary2d[::-1]
+        boundary3d = boundary3d[::-1]
+
+    pts3 = np.column_stack([boundary2d, np.zeros(len(boundary2d))])
+    faces = np.hstack([[len(pts3)], np.arange(len(pts3))])
+    poly = pv.PolyData(pts3, faces=faces)
+
+    tri2d = poly.triangulate()
+
+    sphere_pts = np.array([
+        gnomonic_to_sphere(x, y, e1, e2, c, radius=RADIUS)
+        for x, y, _ in tri2d.points
+    ])
+
+    return pv.PolyData(sphere_pts, faces=tri2d.faces)
+
+
+def update_fill():
+    """
+    Shade the interior of the spherical region.
+    Assumes points are intended to wrap counterclockwise.
+    Only fills when the polygon is representable in one hemisphere.
+    """
+    global fill_actor
+
+    if fill_actor is not None:
+        plotter.remove_actor(fill_actor)
+        fill_actor = None
+
+    if len(clicked_points) < 3:
+        return
+
+    pts = clicked_points
+
+    normal = polygon_reference_normal(pts)
+    if normal is None:
+        return
+
+    fill_mesh = build_filled_spherical_region(pts, arc_resolution=40)
+    if fill_mesh is not None:
+        fill_actor = plotter.add_mesh(
+            fill_mesh,
+            color="red",
+            opacity=0.25,
+            smooth_shading=True,
+            show_edges=False,
+        )
 
 
 def main():

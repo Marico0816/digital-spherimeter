@@ -1,6 +1,7 @@
 import geopandas as gpd
 import math
 import numpy as np
+import matplotlib.pyplot as plt
 
 # from twod_prototype import SphereDrawer2D
 from country_areas_ne_names import get_country_area_km2
@@ -49,7 +50,7 @@ def process_data(source_type, country=None):
         if gdf[gdf["ADMIN"] == country].empty:
             print("Invalid country")
             return []
-        geom = gdf[gdf["ADMIN"] == country].iloc[0].geometry            
+        geom = gdf[gdf["ADMIN"] == country].iloc[0].geometry
 
         # If the country has multiple parts, sum them
         if geom.geom_type == "MultiPolygon":
@@ -221,11 +222,17 @@ def main():
     shape_countries = set(gdf["ADMIN"])
     wiki_countries = set(COUNTRY_AREAS_KM2.keys())
     countries = sorted(shape_countries & wiki_countries)
+    country_count = len(countries)
 
     abs_errors = []
 
     for country in countries:
+        # if country == "Monaco" or country == "Maldives":
+        #     continue
         true_area = COUNTRY_AREAS_KM2[country]
+        if true_area < 1000:
+            country_count -= 1
+            continue
 
         points = process_data("country", country)
         area = calculate_area_of_multiple_parts(points)
@@ -244,8 +251,18 @@ def main():
     avg_abs_error = sum(abs_errors) / len(abs_errors)
 
     print()
-    print(f"Country county: {len(countries)}")
+    print(f"Country county: {country_count}")
     print(f"Average absolute percent error: {avg_abs_error:.4f}%")
+
+    plt.figure(figsize=(8, 5))
+    plt.hist(abs_errors, bins=30, edgecolor="black")
+    plt.xlabel("Absolute percent error")
+    plt.ylabel("Number of countries")
+    plt.title("Histogram of Absolute Percent Errors")
+    plt.axvline(avg_abs_error, linestyle="--", label=f"Mean = {avg_abs_error:.2f}%")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == "__main__":
