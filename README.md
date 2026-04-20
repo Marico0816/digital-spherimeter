@@ -1,2 +1,4 @@
 # digital-spherimeter
-Group project 
+
+main.py: Computes areas of countries
+interactive_sphere_draw.py: Computes areas of spherical regions inputed by user
