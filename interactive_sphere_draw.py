@@ -13,17 +13,85 @@ line_actor = None
 text_actor = None
 fill_actor = None
 plotter = None
+sphere_mesh = None
 
 
 def normalize(v):
-    """
-    Normalize a vector to length 1
-    """
     v = np.array(v, dtype=float)
     norm = np.linalg.norm(v)
     if norm == 0:
         return v
     return v / norm
+
+
+def display_to_world(x, y, z):
+    """
+    Convert display coordinates (x, y, z in [0,1]) to world coordinates.
+    z=0 is near plane, z=1 is far plane.
+    """
+    renderer = plotter.renderer
+    renderer.SetDisplayPoint(float(x), float(y), float(z))
+    renderer.DisplayToWorld()
+    world = renderer.GetWorldPoint()
+
+    if abs(world[3]) < 1e-12:
+        return None
+
+    return np.array(world[:3]) / world[3]
+
+
+def intersect_mouse_with_sphere(x, y, radius=RADIUS):
+    """
+    Shoot a ray through the mouse cursor and intersect it with the sphere.
+    Returns the visible intersection point, or None if there is no hit.
+    """
+    p_near = display_to_world(x, y, 0.0)
+    p_far = display_to_world(x, y, 1.0)
+
+    if p_near is None or p_far is None:
+        return None
+
+    d = p_far - p_near
+    d_norm = np.linalg.norm(d)
+    if d_norm < 1e-12:
+        return None
+    d = d / d_norm
+
+    # Solve ||p_near + t d||^2 = radius^2
+    a = np.dot(d, d)
+    b = 2.0 * np.dot(p_near, d)
+    c = np.dot(p_near, p_near) - radius * radius
+
+    disc = b * b - 4.0 * a * c
+    if disc < 0:
+        return None
+
+    sqrt_disc = math.sqrt(disc)
+    t1 = (-b - sqrt_disc) / (2.0 * a)
+    t2 = (-b + sqrt_disc) / (2.0 * a)
+
+    # Keep intersections in front of the camera
+    ts = [t for t in (t1, t2) if t > 0]
+    if not ts:
+        return None
+
+    # Choose the closer visible hit
+    t = min(ts)
+    p = p_near + t * d
+    return normalize(p) * radius
+
+
+def on_left_button_press(*args):
+    """
+    Custom left-click handler that places a point exactly where the mouse ray
+    hits the sphere.
+    """
+    interactor = plotter.iren.interactor
+    x, y = interactor.GetEventPosition()
+
+    point = intersect_mouse_with_sphere(x, y)
+    if point is not None:
+        add_clicked_point(point)
 
 
 def geodesic_arc_points(p0, p1, n=100, radius=1.0):
@@ -418,29 +486,25 @@ def update_fill():
 
 
 def main():
-    global plotter
+    global plotter, sphere_mesh
 
     plotter = pv.Plotter(window_size=[1000, 800])
 
     # Create sphere
-    sphere = pv.Sphere(radius=RADIUS, theta_resolution=120, phi_resolution=120)
+    sphere_mesh = pv.Sphere(radius=RADIUS, theta_resolution=200, phi_resolution=200)
     plotter.add_mesh(
-        sphere,
+        sphere_mesh,
         color="white",
         opacity=0.7,
         smooth_shading=True,
+        pickable=False,   # we are no longer using PyVista's surface picker
     )
 
     plotter.add_axes()
     update_text()
 
-    # Enable clicking on sphere surface
-    plotter.enable_surface_point_picking(
-        callback=click_callback,
-        left_clicking=True,
-        show_point=False,
-        show_message=False,
-    )
+    # Replace enable_surface_point_picking(...) with a custom mouse handler
+    plotter.iren.interactor.AddObserver("LeftButtonPressEvent", on_left_button_press)
 
     # Keyboard shortcuts
     plotter.add_key_event("u", undo_last)
