@@ -1,4 +1,5 @@
 # digital-spherimeter
+Spherical area calculation framework
 
 main.py: Computes areas of countries
 
